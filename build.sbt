@@ -72,7 +72,10 @@ lazy val localProjectSettings = Seq(
 ) ++ commonSettings ++ scalacLintAll
 
 
-lazy val TestDependencies = Seq("org.scalatest" %% "scalatest" % "3.0.1" % Test)
+lazy val TestDependencies = Seq(
+	"org.scalatest" %% "scalatest" % "3.0.5" % Test,
+	"org.scalacheck" %% "scalacheck" % "1.14.0" % Test
+)
 lazy val JmhDependencies = Seq(
 	"org.openjdk.jmh" % "jmh-core" % JmhVersion,
 	"org.openjdk.jmh" % "jmh-generator-annprocess" % JmhVersion % Compile,

@@ -14,6 +14,9 @@ import scala.util.Random
 
 object CollectionBench {
 
+	case class Fixture[A](seed: Int, actual: Seq[A], a: A, aIdx: Int) {
+	}
+
 	trait MutableOps {
 		type A
 		type C[_]
@@ -25,20 +28,24 @@ object CollectionBench {
 		def apply: C[A]
 		def applyAll: C[A]
 		def size: Int
+
+		def _collapse: C[A] => Seq[A]
+		def _fixture: Fixture[A]
 	}
 
+	//noinspection TypeAnnotation
 	@BenchmarkMode(Array(Mode.AverageTime))
 	@OutputTimeUnit(TimeUnit.NANOSECONDS)
 	@State(Scope.Benchmark)
 	class Mutable {
-		@Benchmark def append(bh: Blackhole, input: MutableInput): Unit = bh.consume(input.ops.append)
-		@Benchmark def prepend(bh: Blackhole, input: MutableInput): Unit = bh.consume(input.ops.prepend)
-		@Benchmark def concat(bh: Blackhole, input: MutableInput): Unit = bh.consume(input.ops.concat)
-		@Benchmark def drainArray(bh: Blackhole, input: MutableInput): Unit = bh.consume(input.ops.drainArray)
-		@Benchmark def index(bh: Blackhole, input: MutableInput): Unit = bh.consume(input.ops.index)
-		@Benchmark def apply(bh: Blackhole, input: MutableInput): Unit = bh.consume(input.ops.apply)
-		@Benchmark def applyAll(bh: Blackhole, input: MutableInput): Unit = bh.consume(input.ops.applyAll)
-		@Benchmark def size(bh: Blackhole, input: MutableInput): Unit = bh.consume(input.ops.size)
+		@Benchmark def appendOne(input: MutableInput) = input.ops.append
+		@Benchmark def prependOne(input: MutableInput) = input.ops.prepend
+		@Benchmark def concat(input: MutableInput) = input.ops.concat
+		@Benchmark def drainToArray(input: MutableInput) = input.ops.drainArray
+		@Benchmark def index(input: MutableInput) = input.ops.index
+		@Benchmark def apply(input: MutableInput) = input.ops.apply
+		@Benchmark def applyAll(input: MutableInput) = input.ops.applyAll
+		@Benchmark def size(input: MutableInput) = input.ops.size
 	}
 
 	trait ImmutableOps {
@@ -52,51 +59,60 @@ object CollectionBench {
 		def drainArray: Array[A]
 		def apply: C[A]
 		def applyAll: C[A]
+		def foldL: Int
 		def size: Int
+
+		def _collapse: C[A] => Seq[A]
+		def _fixture: Fixture[A]
 	}
 
+	//noinspection TypeAnnotation
 	@BenchmarkMode(Array(Mode.AverageTime))
 	@OutputTimeUnit(TimeUnit.NANOSECONDS)
 	@State(Scope.Benchmark)
 	class Immutable {
-		@Benchmark def head(bh: Blackhole, input: ImmutableInput): Unit = bh.consume(input.ops.head)
-		@Benchmark def tail(bh: Blackhole, input: ImmutableInput): Unit = bh.consume(input.ops.tail)
-		@Benchmark def append(bh: Blackhole, input: ImmutableInput): Unit = bh.consume(input.ops.append)
-		@Benchmark def prepend(bh: Blackhole, input: ImmutableInput): Unit = bh.consume(input.ops.prepend)
-		@Benchmark def concat(bh: Blackhole, input: ImmutableInput): Unit = bh.consume(input.ops.concat)
-		@Benchmark def drainArray(bh: Blackhole, input: ImmutableInput): Unit = bh.consume(input.ops.drainArray)
-		@Benchmark def apply(bh: Blackhole, input: ImmutableInput): Unit = bh.consume(input.ops.apply)
-		@Benchmark def applyAll(bh: Blackhole, input: ImmutableInput): Unit = bh.consume(input.ops.applyAll)
-		@Benchmark def size(bh: Blackhole, input: ImmutableInput): Unit = bh.consume(input.ops.size)
+		@Benchmark def head(input: ImmutableInput) = input.ops.head
+		@Benchmark def tail(input: ImmutableInput) = input.ops.tail
+		@Benchmark def append(input: ImmutableInput) = input.ops.append
+		@Benchmark def prepend(input: ImmutableInput) = input.ops.prepend
+		@Benchmark def concat(input: ImmutableInput) = input.ops.concat
+		@Benchmark def drainToArray(input: ImmutableInput) = input.ops.drainArray
+		@Benchmark def apply(input: ImmutableInput) = input.ops.apply
+		@Benchmark def applyAll(input: ImmutableInput) = input.ops.applyAll
+		@Benchmark def foldLHashCode(input: ImmutableInput) = input.ops.foldL
+		@Benchmark def size(input: ImmutableInput) = input.ops.size
 	}
 
-	private final val StringTpe = "String"
-	private final val IntTpe    = "Int"
+	final val StringTpe = "String"
+	final val IntTpe    = "Int"
 
-	private final val JavaArrayList    = "java.util.ArrayList"
-	private final val JavaLinkedList   = "java.util.LinkedList"
-	private final val ScalaListBuffer  = "mutable.ListBuffer"
-	private final val ScalaArrayBuffer = "mutable.ArrayBuffer"
+	final val JavaArrayList    = "java.util.ArrayList"
+	final val JavaLinkedList   = "java.util.LinkedList"
+	final val ScalaListBuffer  = "mutable.ListBuffer"
+	final val ScalaArrayBuffer = "mutable.ArrayBuffer"
 
-	private final val ScalaList   = "List"
-	private final val ScalaVector = "Vector"
-	private final val ScalaStream = "Stream"
-	private final val CatsChain   = "Chain"
-	private final val JavaArray   = "Array"
+	final val ScalaList       = "List"
+	final val ScalaVector     = "Vector"
+	final val ScalaStream     = "Stream"
+	final val JavaArray       = "Array"
+	final val CatsChainList   = "Chain(List)"
+	final val CatsChainVector = "Chain(Vector)"
+	final val CatsChainStream = "Chain(Stream)"
+	final val CatsChainArray  = "Chain(Array)"
 
-	type MkOp[A, B] = (Seq[A], A) => B
 	private def prepare[A, B](size: Int, tpe: String)(implicit
-													  strMkOp: MkOp[String, B],
-													  intMkOp: MkOp[Int, B]): B = {
+													  strMkOp: Fixture[String] => B,
+													  intMkOp: Fixture[Int] => B): B = {
 		val mid = size / 2
 		val data = 0 to size
 		tpe match {
 			case StringTpe =>
-				val xs = data.map(_.toString).toVector
-				strMkOp(Random.shuffle(xs), xs(mid))
+				val xs = Random.shuffle(data.map(_.toString)).toVector
+				strMkOp(Fixture(1, xs, xs(mid), mid))
 			case IntTpe    =>
-				val xs = data.toVector
-				intMkOp(Random.shuffle(xs), xs(mid))
+				val xs = Random.shuffle(data).toVector
+				intMkOp(Fixture(1, xs, xs(mid), mid))
+			case bad       => sys.error(s"bad element type `$bad`")
 		}
 	}
 
@@ -112,20 +128,22 @@ object CollectionBench {
 			//			"1000000",
 			//			"10000000",
 		))
-		var size: Int    = _
+		var size: Int = _
 
 		@Param(Array(StringTpe, IntTpe))
-		var cls : String = _
+		var elementTpe: String = _
 
 		@Param(Array(JavaArrayList, JavaLinkedList, ScalaListBuffer, ScalaArrayBuffer))
-		var tpe: String = _
+		var collection: String = _
 
 		var ops: MutableOps = _
 
-		implicit def prepareMutable[X: ClassTag](xs: Seq[X], x: X): MutableOps = {
+		implicit def prepareMutable[X: ClassTag](fixture: Fixture[X]): MutableOps = {
 			import scala.collection.JavaConverters._
-			val mid = xs.length / 2
-			tpe match {
+			val xs = fixture.actual
+			val x = fixture.a
+			val mid = fixture.aIdx
+			collection match {
 				case ScalaArrayBuffer => val cs = ArrayBuffer(xs: _*)
 					new MutableOps {
 						type A = X
@@ -133,11 +151,14 @@ object CollectionBench {
 						def append = {cs append x; cs}
 						def prepend = {cs prepend x; cs}
 						def concat = {cs appendAll cs; cs}
+
 						def drainArray = cs.toArray
 						def index = cs(mid)
 						def apply = ArrayBuffer()
 						def applyAll = ArrayBuffer(xs: _*)
 						def size: Int = cs.length
+						val _fixture  = fixture
+						val _collapse = _.toSeq
 					}
 				case ScalaListBuffer  => val cs = ListBuffer(xs: _*)
 					new MutableOps {
@@ -151,6 +172,8 @@ object CollectionBench {
 						def apply = ListBuffer()
 						def applyAll = ListBuffer(xs: _*)
 						def size: Int = cs.length
+						val _fixture  = fixture
+						val _collapse = _.toSeq
 					}
 				case JavaArrayList    =>
 					val jc = xs.asJavaCollection
@@ -166,6 +189,8 @@ object CollectionBench {
 						def apply = new util.ArrayList[A]()
 						def applyAll = new util.ArrayList[A](jc)
 						def size: Int = cs.size()
+						val _fixture  = fixture
+						val _collapse = _.asScala.toSeq
 					}
 				case JavaLinkedList   =>
 					val jc = xs.asJavaCollection
@@ -181,12 +206,16 @@ object CollectionBench {
 						def apply = new util.LinkedList[A]()
 						def applyAll = new util.LinkedList[A](jc)
 						def size: Int = cs.size()
+						val _fixture  = fixture
+						val _collapse = _.asScala.toSeq
 					}
+				case bad              => sys.error(s"bad collection type `$bad`")
+
 			}
 		}
 
 
-		@Setup(Level.Iteration) def setup(): Unit = ops = prepare(size, cls)
+		@Setup(Level.Iteration) def setup(): Unit = ops = prepare(size, elementTpe)
 
 	}
 
@@ -206,57 +235,21 @@ object CollectionBench {
 		var size: Int = _
 
 		@Param(Array(StringTpe, IntTpe))
-		var cls: String = _
+		var elementTpe: String = _
 
-		@Param(Array(ScalaList, ScalaVector, ScalaStream, CatsChain, JavaArray))
-		var tpe: String = _
+		@Param(Array(ScalaList, ScalaVector, ScalaStream, JavaArray,
+			CatsChainList, CatsChainVector, CatsChainStream, CatsChainArray))
+		var collection: String = _
 
 		var ops: ImmutableOps = _
 
-		private implicit def prepareImmutable[X: ClassTag](xs: Seq[X], x: X): ImmutableOps = tpe match {
-			case ScalaList   => val cs = xs.toList
-				new ImmutableOps {
-					type A = X
-					type C[x] = List[x]
-					def head = cs.headOption
-					def tail = cs.tail
-					def append = cs :+ x
-					def prepend = x +: cs
-					def concat = cs ++ cs
-					def drainArray = cs.toArray
-					def apply = List.empty
-					def applyAll = List(xs: _*)
-					def size = cs.size
-				}
-			case ScalaVector => val cs = xs.toVector
-				new ImmutableOps {
-					type A = X
-					type C[x] = Vector[x]
-					def head = cs.headOption
-					def tail = cs.tail
-					def append = cs :+ x
-					def prepend = x +: cs
-					def concat = cs ++ cs
-					def drainArray = cs.toArray
-					def apply = Vector.empty
-					def applyAll = Vector(xs: _*)
-					def size = cs.size
-				}
-			case ScalaStream => val cs = xs.toStream
-				new ImmutableOps {
-					type A = X
-					type C[x] = Stream[x]
-					def head = cs.headOption
-					def tail = cs.tail
-					def append = cs :+ x
-					def prepend = x +: cs
-					def concat = cs ++ cs
-					def drainArray = cs.toArray
-					def apply = Stream.empty
-					def applyAll = Stream(xs: _*)
-					def size = cs.size
-				}
-			case CatsChain   => val cs = Chain.fromSeq(xs)
+		private implicit def prepareImmutable[X: ClassTag](fixture: Fixture[X]): ImmutableOps = {
+			val xs = fixture.actual
+			val x = fixture.a
+
+
+			@inline def mkChainOps(xs: Seq[X]) = {
+				val cs = Chain.fromSeq(xs)
 				new ImmutableOps {
 					type A = X
 					type C[x] = Chain[x]
@@ -268,25 +261,92 @@ object CollectionBench {
 					def drainArray = cs.iterator.toArray
 					def apply = Chain.empty
 					def applyAll = Chain(xs: _*)
+					def foldL = cs.foldLeft(0)(_.hashCode + _.hashCode)
 					def size = cs.length.toInt
+					val _fixture  = fixture
+					val _collapse = _.toList
 				}
-			case JavaArray   => val cs = xs.toArray
-				new ImmutableOps {
-					type A = X
-					type C[x] = Array[x]
-					def head = cs.headOption
-					def tail = cs.tail
-					def append = cs :+ x
-					def prepend = x +: cs
-					def concat = cs ++ cs
-					def drainArray = cs.toArray
-					def apply = Array.empty
-					def applyAll = Array(xs: _*)
-					def size = cs.length
-				}
+			}
+
+			collection match {
+				case ScalaList   => val cs = xs.toList
+					new ImmutableOps {
+						type A = X
+						type C[x] = List[x]
+						def head = cs.headOption
+						def tail = cs.tail
+						def append = cs :+ x
+						def prepend = x +: cs
+						def concat = cs ++ cs
+						def drainArray = cs.toArray
+						def apply = List.empty
+						def applyAll = List(xs: _*)
+						def foldL = cs.foldLeft(0)(_.hashCode + _.hashCode)
+						def size = cs.size
+						val _fixture  = fixture
+						val _collapse = _.toSeq
+					}
+				case ScalaVector => val cs = xs.toVector
+					new ImmutableOps {
+						type A = X
+						type C[x] = Vector[x]
+						def head = cs.headOption
+						def tail = cs.tail
+						def append = cs :+ x
+						def prepend = x +: cs
+						def concat = cs ++ cs
+						def drainArray = cs.toArray
+						def apply = Vector.empty
+						def applyAll = Vector(xs: _*)
+						def foldL = cs.foldLeft(0)(_.hashCode + _.hashCode)
+						def size = cs.size
+						val _fixture  = fixture
+						val _collapse = _.toSeq
+					}
+				case ScalaStream => val cs = xs.toStream
+					new ImmutableOps {
+						type A = X
+						type C[x] = Stream[x]
+						def head = cs.headOption
+						def tail = cs.tail
+						def append = cs :+ x
+						def prepend = x +: cs
+						def concat = cs ++ cs
+						def drainArray = cs.toArray
+						def apply = Stream.empty
+						def applyAll = Stream(xs: _*)
+						def foldL = cs.foldLeft(0)(_.hashCode + _.hashCode)
+						def size = cs.size
+						val _fixture  = fixture
+						val _collapse = _.toSeq
+					}
+
+				case JavaArray       => val cs = xs.toArray
+					new ImmutableOps {
+						type A = X
+						type C[x] = Array[x]
+						def head = cs.headOption
+						def tail = cs.tail
+						def append = cs :+ x
+						def prepend = x +: cs
+						def concat = cs ++ cs
+						def drainArray = cs.toArray
+						def apply = Array.empty
+						def applyAll = Array(xs: _*)
+						def foldL = cs.foldLeft(0)(_.hashCode + _.hashCode)
+						def size = cs.length
+						val _fixture  = fixture
+						val _collapse = _.toSeq
+					}
+				case CatsChainList   => mkChainOps(xs.toList)
+				case CatsChainVector => mkChainOps(xs.toVector)
+				case CatsChainStream => mkChainOps(xs.toStream)
+				case CatsChainArray  => mkChainOps(xs.toArray[X])
+				case bad             => sys.error(s"bad collection type `$bad`")
+			}
 		}
 
-		@Setup(Level.Iteration) def setup(): Unit = ops = prepare(size, cls)
+		@Setup(Level.Iteration) def setup(): Unit = ops = prepare(size, elementTpe)
 
 	}
 
