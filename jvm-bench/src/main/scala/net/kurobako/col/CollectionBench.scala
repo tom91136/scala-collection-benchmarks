@@ -125,7 +125,7 @@ final object CollectionBench {
 			//			"10",
 			//			"100",
 			"1000",
-//			"10000",
+			//			"10000",
 			"100000",
 			//			"1000000",
 			//			"10000000",
@@ -135,7 +135,10 @@ final object CollectionBench {
 		@Param(Array(StringTpe, IntTpe))
 		var elementTpe: String = _
 
-		@Param(Array(JavaArrayList, JavaLinkedList, ScalaListBuffer, ScalaArrayBuffer))
+		@Param(Array(
+			JavaArrayList, JavaLinkedList,
+			ScalaListBuffer, ScalaArrayBuffer,
+			ChimeraSlidingBuffer))
 		var collection: String = _
 
 		var ops: MutableOps = _
@@ -239,9 +242,6 @@ final object CollectionBench {
 	}
 
 
-
-
-
 	@State(Scope.Thread) class ImmutableInput {
 
 		@Param(Array(
@@ -249,7 +249,7 @@ final object CollectionBench {
 			//			"10",
 			//			"100",
 			"1000",
-//			"10000",
+			//			"10000",
 			"100000",
 			//			"1000000",
 			//			"10000000",
