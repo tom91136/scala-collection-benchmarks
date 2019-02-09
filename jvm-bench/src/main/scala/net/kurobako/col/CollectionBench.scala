@@ -4,6 +4,7 @@ import java.util
 import java.util.concurrent.TimeUnit
 
 import cats.data.Chain
+import chimera.compiler.datastructures.SlidingBuffer
 import org.openjdk.jmh.annotations._
 import org.openjdk.jmh.infra.Blackhole
 
@@ -12,7 +13,7 @@ import scala.reflect.ClassTag
 import scala.util.Random
 
 
-object CollectionBench {
+final object CollectionBench {
 
 	case class Fixture[A](seed: Int, actual: Seq[A], a: A, aIdx: Int) {
 	}
@@ -86,10 +87,11 @@ object CollectionBench {
 	final val StringTpe = "String"
 	final val IntTpe    = "Int"
 
-	final val JavaArrayList    = "java.util.ArrayList"
-	final val JavaLinkedList   = "java.util.LinkedList"
-	final val ScalaListBuffer  = "mutable.ListBuffer"
-	final val ScalaArrayBuffer = "mutable.ArrayBuffer"
+	final val JavaArrayList        = "java.util.ArrayList"
+	final val JavaLinkedList       = "java.util.LinkedList"
+	final val ScalaListBuffer      = "mutable.ListBuffer"
+	final val ScalaArrayBuffer     = "mutable.ArrayBuffer"
+	final val ChimeraSlidingBuffer = "chimera.SlidingBuffer"
 
 	final val ScalaList       = "List"
 	final val ScalaVector     = "Vector"
@@ -123,7 +125,7 @@ object CollectionBench {
 			//			"10",
 			//			"100",
 			"1000",
-			"10000",
+//			"10000",
 			"100000",
 			//			"1000000",
 			//			"10000000",
@@ -144,7 +146,7 @@ object CollectionBench {
 			val x = fixture.a
 			val mid = fixture.aIdx
 			collection match {
-				case ScalaArrayBuffer => val cs = ArrayBuffer(xs: _*)
+				case ScalaArrayBuffer     => val cs = ArrayBuffer(xs: _*)
 					new MutableOps {
 						type A = X
 						type C[x] = ArrayBuffer[x]
@@ -160,7 +162,7 @@ object CollectionBench {
 						val _fixture  = fixture
 						val _collapse = _.toSeq
 					}
-				case ScalaListBuffer  => val cs = ListBuffer(xs: _*)
+				case ScalaListBuffer      => val cs = ListBuffer(xs: _*)
 					new MutableOps {
 						type A = X
 						type C[x] = ListBuffer[x]
@@ -175,7 +177,7 @@ object CollectionBench {
 						val _fixture  = fixture
 						val _collapse = _.toSeq
 					}
-				case JavaArrayList    =>
+				case JavaArrayList        =>
 					val jc = xs.asJavaCollection
 					val cs = new util.ArrayList[X](jc)
 					new MutableOps {
@@ -192,7 +194,7 @@ object CollectionBench {
 						val _fixture  = fixture
 						val _collapse = _.asScala.toSeq
 					}
-				case JavaLinkedList   =>
+				case JavaLinkedList       =>
 					val jc = xs.asJavaCollection
 					val cs = new util.LinkedList[X](jc)
 					new MutableOps {
@@ -209,7 +211,24 @@ object CollectionBench {
 						val _fixture  = fixture
 						val _collapse = _.asScala.toSeq
 					}
-				case bad              => sys.error(s"bad collection type `$bad`")
+				case ChimeraSlidingBuffer =>
+					val cs = SlidingBuffer(xs: _*)
+					new MutableOps {
+						type A = X
+						type C[x] = SlidingBuffer[x]
+						def append = {cs append x; cs}
+						def prepend = {cs prepend x; cs}
+						def concat = {cs appendAll cs; cs}
+						def drainArray = cs.toArray
+						def index = cs(mid)
+						def apply = SlidingBuffer()
+						def applyAll = SlidingBuffer(xs: _*)
+						def size: Int = cs.length
+						val _fixture  = fixture
+						val _collapse = _.toSeq
+					}
+
+				case bad => sys.error(s"bad collection type `$bad`")
 
 			}
 		}
@@ -220,6 +239,9 @@ object CollectionBench {
 	}
 
 
+
+
+
 	@State(Scope.Thread) class ImmutableInput {
 
 		@Param(Array(
@@ -227,7 +249,7 @@ object CollectionBench {
 			//			"10",
 			//			"100",
 			"1000",
-			"10000",
+//			"10000",
 			"100000",
 			//			"1000000",
 			//			"10000000",

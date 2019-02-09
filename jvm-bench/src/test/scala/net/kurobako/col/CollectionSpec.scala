@@ -22,7 +22,8 @@ class CollectionSpec extends FlatSpec with Matchers with GeneratorDrivenProperty
 		JavaArrayList,
 		JavaLinkedList,
 		ScalaArrayBuffer,
-		ScalaListBuffer)
+		ScalaListBuffer,
+		ChimeraSlidingBuffer)
 	private val AllowedTpes         : Gen[String] = Gen.oneOf(StringTpe, IntTpe)
 	private val Sizes               : Gen[Int]    = Gen.chooseNum(0, 10000, 0)
 

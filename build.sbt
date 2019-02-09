@@ -92,7 +92,7 @@ lazy val `jvm-bench` = project.settings(
 	localProjectSettings,
 	libraryDependencies ++= BenchDependencies ++ Seq("org.typelevel" %% "cats-core" % "1.6.0"),
 ).dependsOn(fixtures).enablePlugins(JmhPlugin)
- 
+
 
 lazy val AllBenches = Seq(
 	`jvm-bench`,
@@ -124,8 +124,8 @@ lazy val `scala-collection-benchmarks` = (project in file(".")).settings(
 			clean +:
 			AllBenches.map(project => Def.sequential(((Jmh / run) in project)
 				.toTask(" " + mkJmhArgs(
-					//					iteration = 5,
-					//					warmup = 5,
+					iteration = 5,
+					warmup = 5,
 					filename = s"../docs/jmh_${project.id}.json")))),
 			Def.task("Done"))
 	}.value,
