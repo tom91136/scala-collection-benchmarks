@@ -4,79 +4,35 @@ enablePlugins(JmhPlugin)
 
 
 lazy val commonSettings = Seq(
-	scalaVersion := "2.12.8",
-	javacOptions ++= Seq(
-		"-target", "1.8",
-		"-source", "1.8",
-		"-Xlint:deprecation")
-)
-
-lazy val scalacLintAll = Seq(
+	addCompilerPlugin("org.typelevel" %% "kind-projector" % "0.10.3"),
+	scalaVersion := "2.13.4",
 	scalacOptions ++= Seq(
-		"-target:jvm-1.8",
-		"-encoding", "UTF-8",
-		"-unchecked",
-		"-deprecation",
-		"-explaintypes",
-		"-feature",
-		"-Xfuture",
-
-		"-language:existentials",
-		"-language:experimental.macros",
-		"-language:higherKinds",
-		"-language:postfixOps",
-		"-language:implicitConversions",
-
-		"-Xlint:adapted-args",
-		"-Xlint:by-name-right-associative",
-		"-Xlint:constant",
-		"-Xlint:delayedinit-select",
-		"-Xlint:doc-detached",
-		"-Xlint:inaccessible",
-		"-Xlint:infer-any",
-		"-Xlint:missing-interpolator",
-		"-Xlint:nullary-override",
-		"-Xlint:nullary-unit",
-		"-Xlint:option-implicit",
-		"-Xlint:package-object-classes", // too widespread
-		"-Xlint:poly-implicit-overload",
-		"-Xlint:private-shadow",
-		"-Xlint:stars-align",
-		"-Xlint:type-parameter-shadow",
-		"-Xlint:unsound-match",
-
-		"-Yno-adapted-args",
-		"-Ywarn-dead-code",
-		"-Ywarn-extra-implicit",
-		"-Ywarn-inaccessible",
-		"-Ywarn-infer-any",
-		"-Ywarn-nullary-override",
-		"-Ywarn-nullary-unit",
-		"-Ywarn-numeric-widen",
-		"-Ywarn-unused:implicits",
-		//		"-Ywarn-unused:imports",
-		"-Ywarn-unused:locals",
-		"-Ywarn-unused:params",
-		"-Ywarn-unused:patvars",
-		"-Ywarn-unused:privates",
-		"-Ywarn-value-discard",
-		"-Ypartial-unification",
+		"-Ymacro-annotations"
 	),
+	scalacOptions ~= filterConsoleScalacOptions,
+	resolvers ++= Seq(
+		Resolver.mavenLocal,
+		Resolver.jcenterRepo,
+	)
 )
 
-lazy val JmhVersion = "1.21"
+
+
+lazy val JmhVersion = "1.27"
 
 lazy val localProjectSettings = Seq(
 	organization := "net.kurobako",
 	version := "0.1.0-SNAPSHOT",
-) ++ commonSettings ++ scalacLintAll
+) ++ commonSettings
 
 
 lazy val TestDependencies = Seq(
-	"org.scalatest" %% "scalatest" % "3.0.5" % Test,
-	"org.scalacheck" %% "scalacheck" % "1.14.0" % Test
+	"org.scalatest" %% "scalatest" % "3.2.3" % Test,
+	"org.scalacheck" %% "scalacheck" % "1.14.1" % Test,
+	"org.scalatestplus" %% "scalacheck-1-15" % "3.2.3.0" % Test
+
 )
-lazy val JmhDependencies = Seq(
+lazy val JmhDependencies  = Seq(
 	"org.openjdk.jmh" % "jmh-core" % JmhVersion,
 	"org.openjdk.jmh" % "jmh-generator-annprocess" % JmhVersion % Compile,
 )
@@ -90,7 +46,7 @@ lazy val BenchDependencies = TestDependencies ++ JmhDependencies
 
 lazy val `jvm-bench` = project.settings(
 	localProjectSettings,
-	libraryDependencies ++= BenchDependencies ++ Seq("org.typelevel" %% "cats-core" % "1.6.0"),
+	libraryDependencies ++= BenchDependencies ++ Seq("org.typelevel" %% "cats-core" % "2.3.1"),
 ).dependsOn(fixtures).enablePlugins(JmhPlugin)
 
 
@@ -101,11 +57,11 @@ lazy val AllBenches = Seq(
 val benchmarkAll = taskKey[String]("Run all individual benchmarks")
 
 def mkJmhArgs(iteration: Int = 10,
-			  warmup: Int = 10,
-			  fork: Int = 1,
-			  thread: Int = 1,
-			  format: String = "json",
-			  filename: String) = Seq("i" -> iteration,
+              warmup: Int = 10,
+              fork: Int = 1,
+              thread: Int = 1,
+              format: String = "json",
+              filename: String) = Seq("i" -> iteration,
 	"wi" -> warmup,
 	"f" -> fork,
 	"t" -> thread,

@@ -1,19 +1,18 @@
 package net.kurobako.col
 
+import cats.data.Chain
+import org.openjdk.jmh.annotations._
+
 import java.util
 import java.util.concurrent.TimeUnit
-
-import cats.data.Chain
-import chimera.compiler.datastructures.SlidingBuffer
-import org.openjdk.jmh.annotations._
-import org.openjdk.jmh.infra.Blackhole
-
 import scala.collection.mutable.{ArrayBuffer, ListBuffer}
 import scala.reflect.ClassTag
 import scala.util.Random
 
 
-final object CollectionBench {
+object CollectionBench {
+
+	final val Seed = 42
 
 	case class Fixture[A](seed: Int, actual: Seq[A], a: A, aIdx: Int) {
 	}
@@ -26,6 +25,7 @@ final object CollectionBench {
 		def concat: C[A]
 		def drainArray: Array[A]
 		def index: A
+		def empty: C[A]
 		def apply: C[A]
 		def applyAll: C[A]
 		def size: Int
@@ -58,6 +58,7 @@ final object CollectionBench {
 		def prepend: C[A]
 		def concat: C[A]
 		def drainArray: Array[A]
+		def empty: C[A]
 		def apply: C[A]
 		def applyAll: C[A]
 		def foldL: Int
@@ -87,15 +88,15 @@ final object CollectionBench {
 	final val StringTpe = "String"
 	final val IntTpe    = "Int"
 
-	final val JavaArrayList        = "java.util.ArrayList"
-	final val JavaLinkedList       = "java.util.LinkedList"
-	final val ScalaListBuffer      = "mutable.ListBuffer"
-	final val ScalaArrayBuffer     = "mutable.ArrayBuffer"
-	final val ChimeraSlidingBuffer = "chimera.SlidingBuffer"
+	final val JavaArrayList    = "java.util.ArrayList"
+	final val JavaLinkedList   = "java.util.LinkedList"
+	final val ScalaListBuffer  = "mutable.ListBuffer"
+	final val ScalaArrayBuffer = "mutable.ArrayBuffer"
+	//	final val ChimeraSlidingBuffer = "chimera.SlidingBuffer"
 
 	final val ScalaList       = "List"
 	final val ScalaVector     = "Vector"
-	final val ScalaStream     = "Stream"
+	final val ScalaLazyList   = "LazyList"
 	final val JavaArray       = "Array"
 	final val CatsChainList   = "Chain(List)"
 	final val CatsChainVector = "Chain(Vector)"
@@ -103,16 +104,17 @@ final object CollectionBench {
 	final val CatsChainArray  = "Chain(Array)"
 
 	private def prepare[A, B](size: Int, tpe: String)(implicit
-													  strMkOp: Fixture[String] => B,
-													  intMkOp: Fixture[Int] => B): B = {
-		val mid = size / 2
-		val data = 0 to size
+	                                                  strMkOp: Fixture[String] => B,
+	                                                  intMkOp: Fixture[Int] => B): B = {
+		val mid    = size / 2
+		val data   = 0 to size
+		val random = new Random(Seed)
 		tpe match {
 			case StringTpe =>
-				val xs = Random.shuffle(data.map(_.toString)).toVector
+				val xs = random.shuffle(data.map(_.toString).toVector)
 				strMkOp(Fixture(1, xs, xs(mid), mid))
 			case IntTpe    =>
-				val xs = Random.shuffle(data).toVector
+				val xs = random.shuffle(data.toVector)
 				intMkOp(Fixture(1, xs, xs(mid), mid))
 			case bad       => sys.error(s"bad element type `$bad`")
 		}
@@ -138,18 +140,18 @@ final object CollectionBench {
 		@Param(Array(
 			JavaArrayList, JavaLinkedList,
 			ScalaListBuffer, ScalaArrayBuffer,
-			ChimeraSlidingBuffer))
+			//			ChimeraSlidingBuffer
+		))
 		var collection: String = _
 
 		var ops: MutableOps = _
 
 		implicit def prepareMutable[X: ClassTag](fixture: Fixture[X]): MutableOps = {
-			import scala.collection.JavaConverters._
-			val xs = fixture.actual
-			val x = fixture.a
+			val xs  = fixture.actual
+			val x   = fixture.a
 			val mid = fixture.aIdx
 			collection match {
-				case ScalaArrayBuffer     => val cs = ArrayBuffer(xs: _*)
+				case ScalaArrayBuffer => val cs = ArrayBuffer(xs: _*)
 					new MutableOps {
 						type A = X
 						type C[x] = ArrayBuffer[x]
@@ -159,13 +161,14 @@ final object CollectionBench {
 
 						def drainArray = cs.toArray
 						def index = cs(mid)
+						def empty = ArrayBuffer()
 						def apply = ArrayBuffer()
 						def applyAll = ArrayBuffer(xs: _*)
 						def size: Int = cs.length
 						val _fixture  = fixture
 						val _collapse = _.toSeq
 					}
-				case ScalaListBuffer      => val cs = ListBuffer(xs: _*)
+				case ScalaListBuffer  => val cs = ListBuffer(xs: _*)
 					new MutableOps {
 						type A = X
 						type C[x] = ListBuffer[x]
@@ -174,13 +177,15 @@ final object CollectionBench {
 						def concat = {cs appendAll cs; cs}
 						def drainArray = cs.toArray
 						def index = cs(mid)
+						def empty = ListBuffer.empty
 						def apply = ListBuffer()
 						def applyAll = ListBuffer(xs: _*)
 						def size: Int = cs.length
 						val _fixture  = fixture
 						val _collapse = _.toSeq
 					}
-				case JavaArrayList        =>
+				case JavaArrayList    =>
+					import scala.jdk.CollectionConverters._
 					val jc = xs.asJavaCollection
 					val cs = new util.ArrayList[X](jc)
 					new MutableOps {
@@ -191,13 +196,15 @@ final object CollectionBench {
 						def concat = {cs addAll cs; cs}
 						def drainArray = cs.toArray.asInstanceOf[Array[A]]
 						def index = cs.get(mid)
+						def empty = new util.ArrayList[A]()
 						def apply = new util.ArrayList[A]()
 						def applyAll = new util.ArrayList[A](jc)
 						def size: Int = cs.size()
 						val _fixture  = fixture
 						val _collapse = _.asScala.toSeq
 					}
-				case JavaLinkedList       =>
+				case JavaLinkedList   =>
+					import scala.jdk.CollectionConverters._
 					val jc = xs.asJavaCollection
 					val cs = new util.LinkedList[X](jc)
 					new MutableOps {
@@ -208,28 +215,29 @@ final object CollectionBench {
 						def concat = {cs addAll cs; cs}
 						def drainArray = cs.toArray.asInstanceOf[Array[A]]
 						def index = cs.get(mid)
+						def empty = new util.LinkedList[A]()
 						def apply = new util.LinkedList[A]()
 						def applyAll = new util.LinkedList[A](jc)
 						def size: Int = cs.size()
 						val _fixture  = fixture
 						val _collapse = _.asScala.toSeq
 					}
-				case ChimeraSlidingBuffer =>
-					val cs = SlidingBuffer(xs: _*)
-					new MutableOps {
-						type A = X
-						type C[x] = SlidingBuffer[x]
-						def append = {cs append x; cs}
-						def prepend = {cs prepend x; cs}
-						def concat = {cs appendAll cs; cs}
-						def drainArray = cs.toArray
-						def index = cs(mid)
-						def apply = SlidingBuffer()
-						def applyAll = SlidingBuffer(xs: _*)
-						def size: Int = cs.length
-						val _fixture  = fixture
-						val _collapse = _.toSeq
-					}
+				//				case ChimeraSlidingBuffer =>
+				//					val cs = SlidingBuffer(xs: _*)
+				//					new MutableOps {
+				//						type A = X
+				//						type C[x] = SlidingBuffer[x]
+				//						def append = {cs append x; cs}
+				//						def prepend = {cs prepend x; cs}
+				//						def concat = {cs appendAll cs; cs}
+				//						def drainArray = cs.toArray
+				//						def index = cs(mid)
+				//						def apply = SlidingBuffer()
+				//						def applyAll = SlidingBuffer(xs: _*)
+				//						def size: Int = cs.length
+				//						val _fixture  = fixture
+				//						val _collapse = _.toSeq
+				//					}
 
 				case bad => sys.error(s"bad collection type `$bad`")
 
@@ -259,7 +267,7 @@ final object CollectionBench {
 		@Param(Array(StringTpe, IntTpe))
 		var elementTpe: String = _
 
-		@Param(Array(ScalaList, ScalaVector, ScalaStream, JavaArray,
+		@Param(Array(ScalaList, ScalaVector, ScalaLazyList, JavaArray,
 			CatsChainList, CatsChainVector, CatsChainStream, CatsChainArray))
 		var collection: String = _
 
@@ -267,7 +275,7 @@ final object CollectionBench {
 
 		private implicit def prepareImmutable[X: ClassTag](fixture: Fixture[X]): ImmutableOps = {
 			val xs = fixture.actual
-			val x = fixture.a
+			val x  = fixture.a
 
 
 			@inline def mkChainOps(xs: Seq[X]) = {
@@ -281,7 +289,8 @@ final object CollectionBench {
 					def prepend = x +: cs
 					def concat = cs ++ cs
 					def drainArray = cs.iterator.toArray
-					def apply = Chain.empty
+					def empty = Chain.empty
+					def apply = Chain()
 					def applyAll = Chain(xs: _*)
 					def foldL = cs.foldLeft(0)(_.hashCode + _.hashCode)
 					def size = cs.length.toInt
@@ -291,7 +300,7 @@ final object CollectionBench {
 			}
 
 			collection match {
-				case ScalaList   => val cs = xs.toList
+				case ScalaList     => val cs = xs.toList
 					new ImmutableOps {
 						type A = X
 						type C[x] = List[x]
@@ -301,14 +310,15 @@ final object CollectionBench {
 						def prepend = x +: cs
 						def concat = cs ++ cs
 						def drainArray = cs.toArray
-						def apply = List.empty
+						def empty = List.empty
+						def apply = List()
 						def applyAll = List(xs: _*)
 						def foldL = cs.foldLeft(0)(_.hashCode + _.hashCode)
 						def size = cs.size
 						val _fixture  = fixture
 						val _collapse = _.toSeq
 					}
-				case ScalaVector => val cs = xs.toVector
+				case ScalaVector   => val cs = xs.toVector
 					new ImmutableOps {
 						type A = X
 						type C[x] = Vector[x]
@@ -318,25 +328,27 @@ final object CollectionBench {
 						def prepend = x +: cs
 						def concat = cs ++ cs
 						def drainArray = cs.toArray
-						def apply = Vector.empty
+						def empty = Vector.empty
+						def apply = Vector()
 						def applyAll = Vector(xs: _*)
 						def foldL = cs.foldLeft(0)(_.hashCode + _.hashCode)
 						def size = cs.size
 						val _fixture  = fixture
 						val _collapse = _.toSeq
 					}
-				case ScalaStream => val cs = xs.toStream
+				case ScalaLazyList => val cs = xs.to(LazyList)
 					new ImmutableOps {
 						type A = X
-						type C[x] = Stream[x]
+						type C[x] = LazyList[x]
 						def head = cs.headOption
 						def tail = cs.tail
 						def append = cs :+ x
 						def prepend = x +: cs
 						def concat = cs ++ cs
 						def drainArray = cs.toArray
-						def apply = Stream.empty
-						def applyAll = Stream(xs: _*)
+						def empty = LazyList.empty
+						def apply = LazyList()
+						def applyAll = LazyList(xs: _*)
 						def foldL = cs.foldLeft(0)(_.hashCode + _.hashCode)
 						def size = cs.size
 						val _fixture  = fixture
@@ -352,8 +364,9 @@ final object CollectionBench {
 						def append = cs :+ x
 						def prepend = x +: cs
 						def concat = cs ++ cs
-						def drainArray = cs.toArray
-						def apply = Array.empty
+						def drainArray = cs
+						def empty = Array.empty
+						def apply = Array()
 						def applyAll = Array(xs: _*)
 						def foldL = cs.foldLeft(0)(_.hashCode + _.hashCode)
 						def size = cs.length
@@ -362,7 +375,7 @@ final object CollectionBench {
 					}
 				case CatsChainList   => mkChainOps(xs.toList)
 				case CatsChainVector => mkChainOps(xs.toVector)
-				case CatsChainStream => mkChainOps(xs.toStream)
+				case CatsChainStream => mkChainOps(xs.to(LazyList))
 				case CatsChainArray  => mkChainOps(xs.toArray[X])
 				case bad             => sys.error(s"bad collection type `$bad`")
 			}

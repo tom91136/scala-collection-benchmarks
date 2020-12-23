@@ -1,17 +1,18 @@
 package net.kurobako.col
 
 import net.kurobako.col.CollectionBench._
-import org.scalatest.prop.GeneratorDrivenPropertyChecks
-import org.scalatest.{FlatSpec, Matchers}
 import org.scalacheck.Gen
+import org.scalatest.flatspec.AnyFlatSpec
+import org.scalatest.matchers.should.Matchers
+import org.scalatestplus.scalacheck.ScalaCheckDrivenPropertyChecks
 
 
-class CollectionSpec extends FlatSpec with Matchers with GeneratorDrivenPropertyChecks {
+class CollectionSpec extends AnyFlatSpec with Matchers with ScalaCheckDrivenPropertyChecks {
 
 	private val ImmutableCollections: Gen[String] = Gen.oneOf(
 		ScalaList,
 		ScalaVector,
-		ScalaStream,
+		ScalaLazyList,
 		JavaArray,
 		CatsChainList,
 		CatsChainVector,
@@ -23,7 +24,8 @@ class CollectionSpec extends FlatSpec with Matchers with GeneratorDrivenProperty
 		JavaLinkedList,
 		ScalaArrayBuffer,
 		ScalaListBuffer,
-		ChimeraSlidingBuffer)
+		//		ChimeraSlidingBuffer
+	)
 	private val AllowedTpes         : Gen[String] = Gen.oneOf(StringTpe, IntTpe)
 	private val Sizes               : Gen[Int]    = Gen.chooseNum(0, 10000, 0)
 
@@ -35,8 +37,8 @@ class CollectionSpec extends FlatSpec with Matchers with GeneratorDrivenProperty
 				input.elementTpe = elementTpe
 				input.collection = collection
 				input.setup()
-				val ops = input.ops
-				val actual = ops._fixture.actual
+				val ops      = input.ops
+				val actual   = ops._fixture.actual
 				val collapse = ops._collapse
 				ops.head should be(actual.headOption)
 				collapse(ops.tail) should contain theSameElementsInOrderAs actual.tail
@@ -45,6 +47,7 @@ class CollectionSpec extends FlatSpec with Matchers with GeneratorDrivenProperty
 				collapse(ops.concat) should contain theSameElementsInOrderAs actual ++ actual
 				ops.drainArray.toSeq should contain theSameElementsInOrderAs actual
 				collapse(ops.apply) shouldBe empty
+				collapse(ops.empty) shouldBe empty
 				collapse(ops.applyAll) should contain theSameElementsInOrderAs actual
 				ops.foldL should be(actual.foldLeft(0)(_.hashCode + _.hashCode))
 				ops.size should be(actual.size)
